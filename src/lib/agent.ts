@@ -66,7 +66,13 @@ let mcp: { url: string; client: Promise<MCPClient> } | undefined
 
 async function mcpTools(url: string) {
   if (mcp?.url !== url) {
-    mcp = { url, client: createMCPClient({ transport: { type: "http", url } }) }
+    mcp = {
+      url,
+      client: createMCPClient({
+        // wrapper: the transport calls this.fetchFn(), and browsers reject fetch bound to a non-window `this`
+        transport: { type: "http", url, fetch: (...args) => fetch(...args) },
+      }),
+    }
   }
   try {
     return await (await mcp.client).tools()
