@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createGoogle } from "@ai-sdk/google"
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { webLLM, type WebLLMLanguageModel } from "@browser-ai/web-llm"
+import type { WebLLMLanguageModel } from "@browser-ai/web-llm"
 import {
   DirectChatTransport,
   isStepCount,
@@ -44,6 +44,8 @@ async function createModel(
       return createGoogle({ apiKey })(model)
     case "webllm":
       if (local?.modelId !== model) {
+        // lazy: WebLLM is several MB and only needed for local models
+        const { webLLM } = await import("@browser-ai/web-llm")
         local = webLLM(model, {
           worker: new Worker(new URL("./webllm-worker.ts", import.meta.url), {
             type: "module",
@@ -71,7 +73,8 @@ async function mcpTools(url: string) {
   } catch (err) {
     mcp = undefined // reconnect on next message, e.g. after the server restarts
     throw new Error(
-      `MCP server at ${url} unreachable: ${err instanceof Error ? err.message : err}`
+      `MCP server at ${url} unreachable: ${err instanceof Error ? err.message : err}`,
+      { cause: err }
     )
   }
 }
