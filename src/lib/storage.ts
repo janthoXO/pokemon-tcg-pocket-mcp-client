@@ -8,6 +8,16 @@ export const PROVIDERS = {
 } as const
 export type Provider = keyof typeof PROVIDERS
 
+// curated from @mlc-ai/web-llm prebuiltAppConfig: instruct models able to follow the JSON tool-call prompt
+export const WEBLLM_MODELS = {
+  "Qwen3-4B-q4f16_1-MLC": "Qwen3 4B · 3.4 GB",
+  "Qwen3-8B-q4f16_1-MLC": "Qwen3 8B · 5.7 GB",
+  "Qwen3.5-4B-q4f16_1-MLC": "Qwen3.5 4B · 3.9 GB",
+  "Qwen3-1.7B-q4f16_1-MLC": "Qwen3 1.7B · 2.0 GB (fast, less reliable)",
+  "Hermes-3-Llama-3.1-8B-q4f16_1-MLC": "Hermes 3 Llama 3.1 8B · 4.9 GB",
+  "Llama-3.2-3B-Instruct-q4f16_1-MLC": "Llama 3.2 3B · 2.3 GB",
+}
+
 export type ProviderConfig = { model: string; apiKey: string; baseURL: string }
 
 export type Settings = {
