@@ -5,20 +5,24 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import type { WebLLMLanguageModel } from "@browser-ai/web-llm"
 import {
   DirectChatTransport,
+  extractReasoningMiddleware,
   isStepCount,
   ToolLoopAgent,
   type ChatTransport,
   type LanguageModel,
   type ToolSet,
   type UIMessage,
+  wrapLanguageModel,
 } from "ai"
 
 import type { Settings } from "@/lib/storage"
 
-const INSTRUCTIONS = `You help users find and understand Pokémon TCG Pocket cards.
-Use the search_cards tool for every question about cards; never invent cards.
-Pass the language of the user's message as \`language\` when the tool supports it, otherwise "en".
-Every card the tool returns is shown to the user as an image grid right below your answer, so do not list them again. Answer in the user's language with a short summary or the specific detail they asked for.`
+const INSTRUCTIONS = `You help users find Pokémon TCG Pocket cards with the search_cards tool.
+- For any question about cards, call search_cards in the same reply. Never say you will search without calling the tool, and never invent cards.
+- Only set the fields you need. \`type\` is the energy type (Fire, Water, ...), \`category\` is Pokemon, Item, Supporter, Tool or Stadium. Game mechanics like "asleep", "heal" or "discard energy" go into \`attack\` (for attacks) or \`effect\` (for abilities and trainer cards) as a short phrase.
+- Set \`language\` to the language of the user's message if the tool allows it, otherwise "en".
+- If the tool returns an error, fix the arguments and call it again right away.
+- Found cards are shown to the user as images below your reply, so do not list them all again. Reply briefly in the user's language.`
 
 // one engine per page: re-downloading or re-initialising a local model is expensive
 let local: WebLLMLanguageModel | undefined
@@ -58,8 +62,42 @@ async function createModel(
           .createSessionWithProgress(onProgress)
           .finally(() => onProgress(undefined))
       }
-      return local
+      // Qwen3 still emits an empty <think></think> with thinking disabled
+      return wrapLanguageModel({
+        model: local,
+        middleware: extractReasoningMiddleware({ tagName: "think" }),
+      })
   }
+}
+
+type JsonSchema = {
+  enum?: unknown[]
+  anyOf?: JsonSchema[]
+  properties?: Record<string, JsonSchema>
+  required?: string[]
+}
+
+const enumValues = (s: JsonSchema): unknown[] => [
+  ...(s.enum ?? []),
+  ...(s.anyOf ?? []).flatMap(enumValues),
+]
+
+/** Small models guess enum values ("fire", "English", "Pokemon" as type): fix the casing or drop the field instead of failing the call. */
+export function fixEnums(input: Record<string, unknown>, schema: JsonSchema) {
+  const out = { ...input }
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    const allowed = enumValues(prop)
+    const value = out[key]
+    if (typeof value !== "string" || !allowed.length || allowed.includes(value))
+      continue
+    const match = allowed.find(
+      (a) => typeof a === "string" && a.toLowerCase() === value.toLowerCase()
+    )
+    if (match) out[key] = match
+    else if (schema.required?.includes(key)) out[key] = allowed[0]
+    else delete out[key]
+  }
+  return out
 }
 
 let mcp: { url: string; client: Promise<MCPClient> } | undefined
@@ -75,7 +113,19 @@ async function mcpTools(url: string) {
     }
   }
   try {
-    return await (await mcp.client).tools()
+    const client = await mcp.client
+    const definitions = await client.listTools()
+    const tools = client.toolsFromDefinitions(definitions)
+    for (const { name, inputSchema } of definitions.tools) {
+      const tool = tools[name]
+      const execute = tool.execute
+      tool.execute = (input, options) =>
+        execute(
+          fixEnums(input as Record<string, unknown>, inputSchema as JsonSchema),
+          options
+        )
+    }
+    return tools
   } catch (err) {
     mcp = undefined // reconnect on next message, e.g. after the server restarts
     throw new Error(

@@ -5,7 +5,7 @@ import {
   type ToolUIPart,
   type UIMessage,
 } from "ai"
-import { ArrowUp, Square } from "lucide-react"
+import { ArrowUp, LoaderCircle, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 
@@ -48,7 +48,11 @@ function ToolResult({ part }: { part: ToolUIPart | DynamicToolUIPart }) {
     )
   }
   const cards = output.structuredContent?.results ?? []
-  return cards.length ? <CardGrid cards={cards} /> : null
+  return cards.length ? (
+    <CardGrid cards={cards} />
+  ) : (
+    <p className="text-sm text-muted-foreground">No cards found.</p>
+  )
 }
 
 export function ChatView({
@@ -68,6 +72,8 @@ export function ChatView({
   const [input, setInput] = useState("")
   const bottom = useRef<HTMLDivElement>(null)
   const busy = status === "submitted" || status === "streaming"
+  const lastPart = messages.at(-1)?.parts.at(-1)
+  const typing = lastPart?.type === "text" && lastPart.state === "streaming"
 
   // persist once a turn settles, not on every streamed token
   useEffect(() => {
@@ -135,8 +141,11 @@ export function ChatView({
               </div>
             )
           )}
-          {status === "submitted" && progress === undefined && (
-            <Skeleton className="h-4 w-32" />
+          {busy && !typing && progress === undefined && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <LoaderCircle className="size-4 animate-spin" />
+              Thinking…
+            </div>
           )}
           {error && (
             <Alert variant="destructive">
