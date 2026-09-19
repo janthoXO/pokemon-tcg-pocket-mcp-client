@@ -82,16 +82,17 @@ const enumValues = (s: JsonSchema): unknown[] => [
   ...(s.anyOf ?? []).flatMap(enumValues),
 ]
 
-/** Small models guess enum values ("fire", "English", "Pokemon" as type): fix the casing or drop the field instead of failing the call. */
+/** Small models guess or omit enum values ("fire", "English", "Pokemon" as type): fix the casing, default missing required ones, drop invalid optional ones instead of failing the call. */
 export function fixEnums(input: Record<string, unknown>, schema: JsonSchema) {
   const out = { ...input }
   for (const [key, prop] of Object.entries(schema.properties ?? {})) {
     const allowed = enumValues(prop)
     const value = out[key]
-    if (typeof value !== "string" || !allowed.length || allowed.includes(value))
-      continue
+    // non-strings pass through: `stage` also accepts 0-2
+    if (!allowed.length || allowed.includes(value)) continue
+    if (value != null && typeof value !== "string") continue
     const match = allowed.find(
-      (a) => typeof a === "string" && a.toLowerCase() === value.toLowerCase()
+      (a) => typeof a === "string" && a.toLowerCase() === value?.toLowerCase()
     )
     if (match) out[key] = match
     else if (schema.required?.includes(key)) out[key] = allowed[0]
